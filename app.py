@@ -122,9 +122,17 @@ def index():
             b.textContent = s.name + ' (' + s.initialFuel + ' kg)'
             if (selected === key) b.style.border = '2px solid #a78bfa'
             b.type = 'button'
-            b.onclick = () => { setPolling(false); fetch('/scenario', {method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'}, cache:'no-store', body: JSON.stringify({key})}).then(()=>updateOnce()) }
+            b.onclick = () => handleScenario(key)
             scEl.appendChild(b)
           })
+        }
+
+        function handleScenario(key){
+          // keep current run state; just switch scenario
+          renderScenarios(key)
+          fetch('/scenario', {method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'}, cache:'no-store', body: JSON.stringify({key})})
+            .then(()=>updateOnce())
+            .catch(()=>updateOnce())
         }
 
         function handleToggle(){
@@ -190,7 +198,10 @@ def index():
         }
 
         function updateOnce(){
-          fetch('/status').then(r=>r.json()).then(updateUI)
+          const ts = Date.now()
+          fetch('/status?ts='+ts, {cache:'no-store'})
+            .then(r=>r.json())
+            .then(updateUI)
         }
 
         updateOnce()
@@ -222,9 +233,10 @@ def scenario():
   key = data.get("key", "nominal")
   if key not in SCENARIOS:
     key = "nominal"
+  prev_running = state.get("is_running", False)
   state["scenario"] = key
   init_system(key)
-  state["is_running"] = False
+  state["is_running"] = prev_running
   return jsonify({"ok": True})
 
 @app.route("/status")
