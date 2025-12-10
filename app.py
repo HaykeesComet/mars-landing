@@ -66,8 +66,8 @@ def index():
           <div style="font-size:18px;font-weight:700;margin-bottom:12px">Test Scenarios</div>
           <div class="grid grid-4" id="scenarios"></div>
           <div class="flex" style="margin-top:12px">
-            <button id="toggle" class="btn btn-green" onclick="toggleRun()">▶ Start Monitoring</button>
-            <button class="btn btn-gray" onclick="reset()">🔄 Reset</button>
+            <button id="toggle" type="button" class="btn btn-green" onclick="handleToggle()">▶ Start Monitoring</button>
+            <button type="button" class="btn btn-gray" onclick="handleReset()">🔄 Reset</button>
           </div>
         </div>
 
@@ -112,6 +112,7 @@ def index():
         const alertsEl = document.getElementById('alerts')
         const toggleBtn = document.getElementById('toggle')
         let polling = null
+        let isRunning = false
 
         function renderScenarios(selected){
           scEl.innerHTML = ''
@@ -120,18 +121,30 @@ def index():
             b.className = 'btn btn-gray'
             b.textContent = s.name + ' (' + s.initialFuel + ' kg)'
             if (selected === key) b.style.border = '2px solid #a78bfa'
-            b.onclick = () => fetch('/scenario', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({key})}).then(()=>updateOnce())
+            b.type = 'button'
+            b.onclick = () => { setPolling(false); fetch('/scenario', {method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'}, cache:'no-store', body: JSON.stringify({key})}).then(()=>updateOnce()) }
             scEl.appendChild(b)
           })
         }
 
-        function toggleRun(){
-          const path = toggleBtn.textContent.includes('Start') ? '/start' : '/pause'
-          fetch(path, {method:'POST'}).then(()=>updateOnce())
+        function handleToggle(){
+          const path = isRunning ? '/pause' : '/start'
+          // optimistic UI update
+          isRunning = !isRunning
+          toggleBtn.textContent = isRunning ? '⏸ Pause Monitoring' : '▶ Start Monitoring'
+          setPolling(isRunning)
+          fetch(path, {method:'POST', headers:{'Accept':'application/json'}, cache:'no-store'})
+            .then(()=>updateOnce())
+            .catch(()=>updateOnce())
         }
 
-        function reset(){
-          fetch('/reset', {method:'POST'}).then(()=>updateOnce())
+        function handleReset(){
+          isRunning = false
+          toggleBtn.textContent = '▶ Start Monitoring'
+          setPolling(false)
+          fetch('/reset', {method:'POST', headers:{'Accept':'application/json'}, cache:'no-store'})
+            .then(()=>window.location.reload())
+            .catch(()=>window.location.reload())
         }
 
         function setPolling(run){
@@ -141,8 +154,9 @@ def index():
 
         function updateUI(d){
           renderScenarios(d.selectedScenario)
-          toggleBtn.textContent = d.is_running ? '⏸ Pause Monitoring' : '▶ Start Monitoring'
-          setPolling(d.is_running)
+          isRunning = d.is_running
+          toggleBtn.textContent = isRunning ? '⏸ Pause Monitoring' : '▶ Start Monitoring'
+          setPolling(isRunning)
           if (!d.status) return
           statusPanel.style.display = 'block'
           const cls = d.status.status === 'NOMINAL' ? 'card status-nominal' : d.status.status === 'CAUTION' ? 'card status-caution' : 'card status-critical'
@@ -199,6 +213,7 @@ def pause():
 @app.route("/reset", methods=["POST"])
 def reset():
   init_system(state["scenario"])
+  state["is_running"] = False
   return jsonify({"ok": True})
 
 @app.route("/scenario", methods=["POST"])
@@ -209,6 +224,7 @@ def scenario():
     key = "nominal"
   state["scenario"] = key
   init_system(key)
+  state["is_running"] = False
   return jsonify({"ok": True})
 
 @app.route("/status")
